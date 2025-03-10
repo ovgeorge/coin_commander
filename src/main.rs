@@ -76,6 +76,101 @@ fn load_system_state() -> Result<SystemState, Box<dyn std::error::Error>> {
     })
 }
 
+fn update_accounts(s: &mut Cursive, signer_idx: usize) {
+    let state = s.user_data::<SystemState>().unwrap();
+    let signers = match &state.state {
+        SelectionState::SignerLevel { signers, .. } => signers.clone(),
+        SelectionState::AccountLevel { signers, .. } => signers.clone(),
+        SelectionState::ChainLevel { signers, .. } => signers.clone(),
+        SelectionState::AssetLevel { signers, .. } => signers.clone(),
+    };
+    let accounts = signers[signer_idx].accounts.clone();
+    state.state = SelectionState::AccountLevel {
+        signers: signers.clone(),
+        signer_idx,
+        selected: None,
+    };
+
+    // Clone cb_sink before the closure
+    let cb_sink = s.cb_sink().clone();
+    s.call_on_name("account_select", move |view: &mut SelectView<usize>| {
+        view.clear();
+        for (idx, account) in accounts.iter().enumerate() {
+            view.add_item(account.name.clone(), idx);
+        }
+        if accounts.len() == 1 {
+            // Schedule update_chains to run later
+            cb_sink.send(Box::new(move |s| update_chains(s, signer_idx, 0))).unwrap();
+        }
+    });
+
+    s.call_on_name("chain_select", |view: &mut SelectView<usize>| {
+        view.clear();
+    });
+    s.call_on_name("coin_select", |view: &mut SelectView<usize>| {
+        view.clear();
+    });
+}
+
+fn update_chains(s: &mut Cursive, signer_idx: usize, account_idx: usize) {
+    let state = s.user_data::<SystemState>().unwrap();
+    let signers = match &state.state {
+        SelectionState::SignerLevel { signers, .. } => signers.clone(),
+        SelectionState::AccountLevel { signers, .. } => signers.clone(),
+        SelectionState::ChainLevel { signers, .. } => signers.clone(),
+        SelectionState::AssetLevel { signers, .. } => signers.clone(),
+    };
+    let chains = signers[signer_idx].accounts[account_idx].chains.clone();
+    state.state = SelectionState::ChainLevel {
+        signers: signers.clone(),
+        signer_idx,
+        account_idx,
+        selected: None,
+    };
+
+    // Clone cb_sink before the closure
+    let cb_sink = s.cb_sink().clone();
+    s.call_on_name("chain_select", move |view: &mut SelectView<usize>| {
+        view.clear();
+        for (idx, chain) in chains.iter().enumerate() {
+            view.add_item(chain.name.clone(), idx);
+        }
+        if chains.len() == 1 {
+            // Schedule update_coins to run later
+            cb_sink.send(Box::new(move |s| update_coins(s, signer_idx, account_idx, 0))).unwrap();
+        }
+    });
+
+    s.call_on_name("coin_select", |view: &mut SelectView<usize>| {
+        view.clear();
+    });
+}
+
+fn update_coins(s: &mut Cursive, signer_idx: usize, account_idx: usize, chain_idx: usize) {
+    let state = s.user_data::<SystemState>().unwrap();
+    let signers = match &state.state {
+        SelectionState::SignerLevel { signers, .. } => signers.clone(),
+        SelectionState::AccountLevel { signers, .. } => signers.clone(),
+        SelectionState::ChainLevel { signers, .. } => signers.clone(),
+        SelectionState::AssetLevel { signers, .. } => signers.clone(),
+    };
+    let assets = signers[signer_idx].accounts[account_idx].chains[chain_idx].assets.clone();
+    state.state = SelectionState::AssetLevel {
+        signers: signers.clone(),
+        signer_idx,
+        account_idx,
+        chain_idx,
+        selected: None,
+    };
+    s.call_on_name("coin_select", |view: &mut SelectView<usize>| {
+        view.clear();
+        for (idx, asset) in assets.iter().enumerate() {
+            let item = format!("{}: {}", asset.name, asset.amount);
+            view.add_item(item, idx);
+        }
+    });
+}
+
 fn main() {
     let mut siv = cursive::default();
 
@@ -89,35 +184,7 @@ fn main() {
 
     let signer_select = SelectView::<usize>::new()
         .on_select(move |s, &signer_idx| {
-            let state = s.user_data::<SystemState>().unwrap();
-            let signers = match &state.state {
-                SelectionState::SignerLevel { signers, .. } => signers.clone(),
-                SelectionState::AccountLevel { signers, .. } => signers.clone(),
-                SelectionState::ChainLevel { signers, .. } => signers.clone(),
-                SelectionState::AssetLevel { signers, .. } => signers.clone(),
-            };
-            let accounts = signers[signer_idx].accounts.clone();
-
-            state.state = SelectionState::AccountLevel {
-                signers,
-                signer_idx,
-                selected: None,
-            };
-
-            s.with(|siv| {
-                siv.call_on_name("account_select", |view: &mut SelectView<usize>| {
-                    view.clear();
-                    for (idx, account) in accounts.iter().enumerate() {
-                        view.add_item(account.name.clone(), idx);
-                    }
-                });
-                siv.call_on_name("chain_select", |view: &mut SelectView<usize>| {
-                    view.clear();
-                });
-                siv.call_on_name("coin_select", |view: &mut SelectView<usize>| {
-                    view.clear();
-                });
-            });
+            update_accounts(s, signer_idx);
         })
         .with(|view| {
             for (idx, signer) in signers.iter().enumerate() {
@@ -131,32 +198,13 @@ fn main() {
     let account_select = SelectView::<usize>::new()
         .on_select(move |s, &account_idx| {
             let state = s.user_data::<SystemState>().unwrap();
-            let (signers, signer_idx) = match &state.state {
-                SelectionState::SignerLevel { signers, .. } => (signers.clone(), 0),
-                SelectionState::AccountLevel { signers, signer_idx, .. } => (signers.clone(), *signer_idx),
-                SelectionState::ChainLevel { signers, signer_idx, .. } => (signers.clone(), *signer_idx),
-                SelectionState::AssetLevel { signers, signer_idx, .. } => (signers.clone(), *signer_idx),
+            let signer_idx = match &state.state {
+                SelectionState::AccountLevel { signer_idx, .. } => *signer_idx,
+                SelectionState::ChainLevel { signer_idx, .. } => *signer_idx,
+                SelectionState::AssetLevel { signer_idx, .. } => *signer_idx,
+                _ => 0, // Fallback, though initial state should prevent this
             };
-            let chains = signers[signer_idx].accounts[account_idx].chains.clone();
-
-            state.state = SelectionState::ChainLevel {
-                signers: signers.clone(),
-                signer_idx,
-                account_idx,
-                selected: None,
-            };
-
-            s.with(|siv| {
-                siv.call_on_name("chain_select", |view: &mut SelectView<usize>| {
-                    view.clear();
-                    for (idx, chain) in chains.iter().enumerate() {
-                        view.add_item(chain.name.clone(), idx);
-                    }
-                });
-                siv.call_on_name("coin_select", |view: &mut SelectView<usize>| {
-                    view.clear();
-                });
-            });
+            update_chains(s, signer_idx, account_idx);
         })
         .with_name("account_select")
         .scrollable()
@@ -165,31 +213,12 @@ fn main() {
     let chain_select = SelectView::<usize>::new()
         .on_select(move |s, &chain_idx| {
             let state = s.user_data::<SystemState>().unwrap();
-            let (signers, signer_idx, account_idx) = match &state.state {
-                SelectionState::SignerLevel { signers, .. } => (signers.clone(), 0, 0),
-                SelectionState::AccountLevel { signers, signer_idx, .. } => (signers.clone(), *signer_idx, 0),
-                SelectionState::ChainLevel { signers, signer_idx, account_idx, .. } => (signers.clone(), *signer_idx, *account_idx),
-                SelectionState::AssetLevel { signers, signer_idx, account_idx, .. } => (signers.clone(), *signer_idx, *account_idx),
+            let (signer_idx, account_idx) = match &state.state {
+                SelectionState::ChainLevel { signer_idx, account_idx, .. } => (*signer_idx, *account_idx),
+                SelectionState::AssetLevel { signer_idx, account_idx, .. } => (*signer_idx, *account_idx),
+                _ => (0, 0), // Fallback
             };
-            let assets = signers[signer_idx].accounts[account_idx].chains[chain_idx].assets.clone();
-
-            state.state = SelectionState::AssetLevel {
-                signers: signers.clone(),
-                signer_idx,
-                account_idx,
-                chain_idx,
-                selected: None,
-            };
-
-            s.with(|siv| {
-                siv.call_on_name("coin_select", |view: &mut SelectView<usize>| {
-                    view.clear();
-                    for (idx, asset) in assets.iter().enumerate() {
-                        let item = format!("{}: {}", asset.name, asset.amount);
-                        view.add_item(item, idx);
-                    }
-                });
-            });
+            update_coins(s, signer_idx, account_idx, chain_idx);
         })
         .with_name("chain_select")
         .scrollable()
