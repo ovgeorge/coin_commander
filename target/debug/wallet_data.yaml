@@ -1,0 +1,35 @@
+signers:
+  - name: Signer1
+    accounts:
+      - name: Account1
+        chains:
+          - name: Ethereum
+            assets:
+              - name: ETH
+                amount: 5.2
+              - name: USDT
+                amount: 1000.0
+          - name: Polygon
+            assets:
+              - name: MATIC
+                amount: 150.5
+              - name: USDC
+                amount: 500.0
+      - name: Account2
+        chains:
+          - name: Binance
+            assets:
+              - name: BNB
+                amount: 10.0
+              - name: BUSD
+                amount: 2000.0
+  - name: Signer2
+    accounts:
+      - name: Account3
+        chains:
+          - name: Solana
+            assets:
+              - name: SOL
+                amount: 75.3
+              - name: SRM
+                amount: 300.0
